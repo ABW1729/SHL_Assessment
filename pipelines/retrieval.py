@@ -3,7 +3,7 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 from utils.logger import log_debug
 from utils.llm import run_llm
-from pipelines.models import get_sentence_transformer, compute_embeddings
+from pipelines.models import compute_embeddings
 
 
 class RetrievalPipeline:
@@ -14,14 +14,8 @@ class RetrievalPipeline:
         self.documents = documents
         self.collection = collection
 
-        # Use global model - loaded once
-        self.dense_model = get_sentence_transformer()
-
         tokenized = [d.lower().split() for d in documents]
         self.bm25 = BM25Okapi(tokenized)
-
-        self.embedder = self.dense_model
-        
         # Use global caching for embeddings
         self.embeddings = compute_embeddings(documents)
         
