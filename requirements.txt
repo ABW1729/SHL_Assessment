@@ -6,7 +6,7 @@ sentence-transformers
 rank-bm25
 chromadb
 scikit-learn
-torch
+torch --extra-index-url https://download.pytorch.org/whl/cpu
 transformers
 huggingface-hub
 python-dotenv
