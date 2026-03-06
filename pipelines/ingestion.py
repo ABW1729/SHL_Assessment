@@ -1,6 +1,6 @@
 import pandas as pd
 import chromadb
-from sentence_transformers import SentenceTransformer
+
 
 
 class IngestionPipeline:
@@ -9,18 +9,12 @@ class IngestionPipeline:
 
         self.df = pd.read_csv(data_path)
 
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
-
-        # Use only name for embeddings (less noise)
+        from pipelines.models import compute_embeddings
+        # Use only name+description for embeddings (less noise)
         self.documents = (
-        self.df["name"].astype(str) 
-        + self.df["description"].astype(str)
+            self.df["name"].astype(str) + self.df["description"].astype(str)
         ).tolist()
-        self.embeddings = self.model.encode(
-            self.documents,
-            convert_to_numpy=True,
-            normalize_embeddings=True
-        )
+        self.embeddings = compute_embeddings(self.documents)
 
         self.chroma_client = chromadb.PersistentClient(path="data/chroma_db")
 
