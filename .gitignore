@@ -1,0 +1,93 @@
+# =========================
+# ENVIRONMENT VARIABLES
+# =========================
+.env
+.env.local
+.env.*
+
+
+# =========================
+# PYTHON CACHE
+# =========================
+pycache/
+*.pyc
+*.pyo
+*.pyd
+
+
+# =========================
+# VIRTUAL ENVIRONMENTS
+# =========================
+env/
+venv/
+.venv/
+ENV/
+
+
+# =========================
+# DATA / DATABASE
+# =========================
+chroma_db/
+*.sqlite3
+*.db
+
+
+# =========================
+# MODEL CACHE
+# =========================
+.huggingface/
+.cache/
+transformers_cache/
+sentence_transformers/
+
+
+# =========================
+# LOG FILES
+# =========================
+logs/
+*.log
+debug_log.txt
+
+
+# =========================
+# NOTEBOOK CHECKPOINTS
+# =========================
+.ipynb_checkpoints/
+
+
+# =========================
+# SYSTEM FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+
+# =========================
+# BUILD FILES
+# =========================
+dist/
+build/
+*.egg-info/
+
+
+# =========================
+# IDE FILES
+# =========================
+.vscode/
+.idea/
+
+
+# =========================
+# TEST OUTPUT
+# =========================
+coverage/
+*.coverage
+pytest_cache/
+
+
+# =========================
+# TEMP FILES
+# =========================
+tmp/
+temp/
+*.tmp
