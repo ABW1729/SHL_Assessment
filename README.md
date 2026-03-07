@@ -10,35 +10,13 @@ The system uses LLM-based entity extraction and hybrid retrieval techniques to i
 # Demo
 
 Frontend (Streamlit)  
-Deployment URL: **[Add URL Here]**
+Deployment URL: https://shlassessment-smfv2quln3wpbbecqdfoc5.streamlit.app
 
 Backend (FastAPI)  
-API URL: **[Add API URL Here]**
+API URL: https://web-production-298f.up.railway.app/recommend
 
 ---
 
-# System Architecture
-
-The system follows a three-stage pipeline:
-
-User Query / Job Description  
-↓  
-LLM Entity Extraction  
-↓  
-Query Expansion  
-↓  
-Hybrid Retrieval  
-• Dense Embedding Search  
-• BM25 Keyword Search  
-• Centroid Skill Search  
-↓  
-Reciprocal Rank Fusion (RRF)  
-↓  
-Filtering & Diversification  
-↓  
-Top 10 Recommended Assessments
-
----
 
 # Key Features
 
@@ -83,23 +61,24 @@ The system ensures the final results contain a diverse mix of assessment types s
 # Project Structure
 
 project/
-│
-├── ingestion.py          # Dataset ingestion and indexing  
-├── retrieval.py          # Hybrid retrieval pipeline  
-├── recommendation.py     # Recommendation and ranking logic  
-├── models.py             # LLM and embedding integrations  
-│  
-├── backend/  
-│   └── main.py           # FastAPI backend  
-│  
-├── frontend/  
-│   └── app.py            # Streamlit frontend  
-│  
-├── data/  
-│   └── assessments.csv  
-│  
-├── requirements.txt  
-└── README.md  
+
+ pipelines 
+  ├── ingestion.py          # Dataset ingestion and indexing  
+  ├── retrieval.py          # Hybrid retrieval pipeline  
+  ├── recommendation.py     # Recommendation and ranking logic  
+  ├── models.py             # LLM and embedding integrations  
+  │  
+  ├── backend.py            # FastAPI backend  
+  │            
+  │  
+  ├── frontend.py           # Streamlit frontend  
+  │          
+  │  
+  ├── data/  
+  │   └── assessments.csv  
+  │
+  ├── requirements.txt  
+  └── README.md  
 
 ---
 
@@ -107,8 +86,8 @@ project/
 
 ## Clone Repository
 
-git clone <repo-url>  
-cd project
+git clone https://github.com/ABW1729/SHL_Assessment
+cd SHL_Assessment
 
 ## Create Virtual Environment
 
@@ -119,6 +98,10 @@ Windows:
 
 env\Scripts\activate
 
+## Environment Variables  
+   Create a .env file in root of project and add your huggingface token to the variable HF_TOKEN
+   HF_TOKEN=your hf token  
+   
 ## Install Dependencies
 
 pip install -r requirements.txt
@@ -127,11 +110,7 @@ pip install -r requirements.txt
 
 # Running the Backend
 
-uvicorn main:app --host 0.0.0.0 --port 8000
-
-API docs will be available at:
-
-http://localhost:8000/docs
+uvicorn main:app --host 0.0.0.0 --port 800
 
 ---
 
