@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-API_URL = "https://web-production-298f.up.railway.app/health"
+API_URL = "https://web-production-298f.up.railway.app"
 
 st.set_page_config(page_title="SHL Assessment Recommender", layout="wide")
 
