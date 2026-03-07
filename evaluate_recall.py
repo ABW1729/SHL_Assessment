@@ -2,7 +2,7 @@ import pandas as pd
 import requests
 import json
 
-API_URL = "http://localhost:8000/recommend"
+API_URL = "https://web-production-298f.up.railway.app/recommend"
 
 
 # ----------------------------------------
