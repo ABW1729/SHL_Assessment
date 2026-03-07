@@ -62,7 +62,7 @@ The system ensures the final results contain a diverse mix of assessment types s
 
 project/
 
- pipelines 
+ pipelines   
   ├── ingestion.py          # Dataset ingestion and indexing  
   ├── retrieval.py          # Hybrid retrieval pipeline  
   ├── recommendation.py     # Recommendation and ranking logic  
@@ -86,7 +86,7 @@ project/
 
 ## Clone Repository
 
-git clone https://github.com/ABW1729/SHL_Assessment
+git clone https://github.com/ABW1729/SHL_Assessment  
 cd SHL_Assessment
 
 ## Create Virtual Environment
