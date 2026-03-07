@@ -7,6 +7,10 @@ from pipelines.models import compute_embeddings
 
 
 class RetrievalPipeline:
+    def log_filter_stage(self, stage, indices):
+        import datetime
+        with open('debug_filter_log.txt', 'a') as f:
+            f.write(f"{stage},{indices},{datetime.datetime.now()}\n")
 
     def __init__(self, df, documents, collection):
 
@@ -17,7 +21,14 @@ class RetrievalPipeline:
         tokenized = [d.lower().split() for d in documents]
         self.bm25 = BM25Okapi(tokenized)
         # Use global caching for embeddings
+        # Use global caching for embeddings (in-memory, already handled in compute_embeddings)
         self.embeddings = compute_embeddings(documents)
+
+    # Optionally, add a static method to clear embedding cache if needed
+    @staticmethod
+    def clear_embedding_cache():
+        from pipelines import models
+        models.clear_cache()
         
 
 # =========================
@@ -115,7 +126,7 @@ Job Description:
 """
 
         response = run_llm(prompt)
-        #print(f"\nLLM RAW RESPONSE:\n{response}\n")
+        print(f"\nLLM RAW RESPONSE:\n{response}\n")
         
         structured = {}
         
@@ -151,29 +162,6 @@ Job Description:
         return structured
 
 
-# =========================
-# QUERY EXPANSION
-# =========================
-
-    def expand_queries(self, structured):
-
-        expanded = set()
-
-        role = structured.get("primary_role")
-        tech = structured.get("technical_skills") or []
-        beh = structured.get("behavioral_skills") or []
-
-        if role:
-            expanded.add(role)
-
-        expanded.update(tech)
-        expanded.update(beh)
-
-        for s in tech:
-            if role:
-                expanded.add(f"{role} {s}")
-
-        return list(expanded)
 
 
 # =========================
@@ -197,51 +185,42 @@ Job Description:
         terms.update(beh)
         terms.update(titles)
 
-        return list(terms), list(tech)
+        return list(terms), list(tech), list(beh)
 
 
-# =========================
-# FORWARD SEARCH
-# =========================
-
-    def forward_search(self, query):
-
-        res=self.collection.query(
-            query_texts=[query],
-            n_results=50
-        )
-
-        return [int(i) for i in res["ids"][0]]
 
 
-# =========================
-# REVERSE SEARCH
-# =========================
 
-    def reverse_search(self, query):
+    def embed(self, query):
 
         # Use global cache for query embeddings
         q_emb = compute_embeddings([query])[0]
 
         sims = np.dot(self.embeddings, q_emb)
+        # Normalize embedding scores to [0,1]
+        min_sim = np.min(sims)
+        max_sim = np.max(sims)
+        if max_sim - min_sim > 1e-8:
+            sims_norm = (sims - min_sim) / (max_sim - min_sim)
+        else:
+            sims_norm = np.zeros_like(sims)
 
-        ranked = np.argsort(sims)[::-1][:50]
-
+        ranked = np.argsort(sims_norm)[::-1][:50]
         return ranked.tolist()
 
 
-# =========================
-# BM25 SEARCH
-# =========================
 
     def bm25_search(self, query):
 
-        tokens=query.lower().split()
-
-        scores=self.bm25.get_scores(tokens)
-
-        ranked=np.argsort(scores)[::-1][:50]
-
+        tokens = query.lower().split()
+        scores = self.bm25.get_scores(tokens)
+        # Normalize BM25 scores by max score
+        max_score = np.max(scores)
+        if max_score > 1e-8:
+            scores_norm = scores / max_score
+        else:
+            scores_norm = np.zeros_like(scores)
+        ranked = np.argsort(scores_norm)[::-1][:50]
         return ranked.tolist()
 
 
@@ -254,15 +233,18 @@ Job Description:
         if len(terms) == 0:
             return []
 
-        # Use global cache for term embeddings
+       
         emb = compute_embeddings(terms)
-
         centroid = np.mean(emb, axis=0)
-
         sims = np.dot(self.embeddings, centroid)
-
-        ranked = np.argsort(sims)[::-1][:20]
-
+        
+        min_sim = np.min(sims)
+        max_sim = np.max(sims)
+        if max_sim - min_sim > 1e-8:
+            sims_norm = (sims - min_sim) / (max_sim - min_sim)
+        else:
+            sims_norm = np.zeros_like(sims)
+        ranked = np.argsort(sims_norm)[::-1][:20]
         return ranked.tolist()
 
 
@@ -295,126 +277,47 @@ Job Description:
 
     def retrieve(self, query, filtered_ids=None):
 
+        self.log_filter_stage(
+            'initial_pool',
+            list(range(len(self.df))) if filtered_ids is None else filtered_ids
+        )
+
         structured = self.extract_entities(query)
+        terms, tech_skills , beh_skills = self.build_terms(structured)
 
-        terms, tech_skills = self.build_terms(structured)
+        n_docs = len(self.df)
 
-        expanded_terms = self.expand_queries(structured)
+        # ---------- BM25 ----------
+        tokens = query.lower().split()
+        bm25_scores = self.bm25.get_scores(tokens)
+        bm25_ranked = np.argsort(bm25_scores)[::-1][:120].tolist()
 
-        log_debug("SEARCH_TERMS", terms)
+        # ---------- EMBEDDING ----------
+        q_emb = compute_embeddings([query])[0]
+        emb_scores = np.dot(self.embeddings, q_emb)
+        emb_ranked = np.argsort(emb_scores)[::-1][:120].tolist()
 
-        result_lists = []
-        weight_list = []
+        # ---------- CENTROID ----------
+        centroid_terms = tech_skills + beh_skills if (tech_skills or beh_skills) else terms
 
-        # helper - filter by pre-filtered IDs
-        def filter_by_ids(results):
-            if filtered_ids is None:
-                return results
-            allowed = set(filtered_ids)
-            return [i for i in results if i in allowed]
+        centroid_ranked = []
 
-        # ------------------------
-        # FULL QUERY
-        # ------------------------
+        if centroid_terms:
+            emb = compute_embeddings(centroid_terms)
+            centroid = np.mean(emb, axis=0)
+            centroid_scores = np.dot(self.embeddings, centroid)
+            centroid_ranked = np.argsort(centroid_scores)[::-1][:120].tolist()
 
-        result_lists.append(filter_by_ids(self.forward_search(query)))
-        weight_list.append(2.0)
+        # ---------- RRF FUSION ----------
+        fused = self.rrf(
+            [bm25_ranked, emb_ranked, centroid_ranked],
+            weight_list=[1.0, 1.2, 1.5]  
+        )
 
-        result_lists.append(filter_by_ids(self.reverse_search(query)))
-        weight_list.append(2.0)
-
-        result_lists.append(filter_by_ids(self.bm25_search(query)))
-        weight_list.append(2.0)
-
-        # ------------------------
-        # ROLE
-        # ------------------------
-
-        role = structured.get("primary_role")
-
-        if role:
-
-            result_lists.append(filter_by_ids(self.forward_search(role)))
-            weight_list.append(1.5)
-
-            result_lists.append(filter_by_ids(self.reverse_search(role)))
-            weight_list.append(1.5)
-
-            result_lists.append(filter_by_ids(self.bm25_search(role)))
-            weight_list.append(1.5)
-
-        # ------------------------
-        # TECH SKILLS
-        # ------------------------
-
-        for skill in tech_skills:
-
-            result_lists.append(filter_by_ids(self.forward_search(skill)))
-            weight_list.append(1.5)
-
-            result_lists.append(filter_by_ids(self.reverse_search(skill)))
-            weight_list.append(1.5)
-
-            result_lists.append(filter_by_ids(self.bm25_search(skill)))
-            weight_list.append(1.5)
-
-        # ------------------------
-        # BEHAVIORAL SKILLS
-        # ------------------------
-
-        beh = structured.get("behavioral_skills", [])
-
-        for skill in beh:
-
-            result_lists.append(filter_by_ids(self.forward_search(skill)))
-            weight_list.append(1.3)
-
-            result_lists.append(filter_by_ids(self.reverse_search(skill)))
-            weight_list.append(1.3)
-
-            result_lists.append(filter_by_ids(self.bm25_search(skill)))
-            weight_list.append(1.3)
-
-        # ------------------------
-        # EXPANDED QUERIES
-        # ------------------------
-
-        for q in expanded_terms[:5]:
-
-            result_lists.append(filter_by_ids(self.forward_search(q)))
-            weight_list.append(1.2)
-
-            result_lists.append(filter_by_ids(self.bm25_search(q)))
-            weight_list.append(1.2)
-
-        # ------------------------
-        # OTHER TERMS
-        # ------------------------
-
-        other_terms = [t for t in terms if t not in tech_skills]
-
-        for term in other_terms[:3]:
-
-            result_lists.append(filter_by_ids(self.forward_search(term)))
-            weight_list.append(1.0)
-
-            result_lists.append(filter_by_ids(self.bm25_search(term)))
-            weight_list.append(1.0)
-
-        # ------------------------
-        # CENTROID SEARCH
-        # ------------------------
-
-        centroid_terms = tech_skills if tech_skills else terms
-
-        result_lists.append(filter_by_ids(self.centroid_search(centroid_terms)))
-        weight_list.append(1.0)
-
-        # ------------------------
-        # FUSION
-        # ------------------------
-
-        fused = self.rrf(result_lists, weight_list)
+        # ---------- FILTER ----------
+        if filtered_ids is not None:
+            filtered_set = set(filtered_ids)
+            fused = [i for i in fused if i in filtered_set]
 
         candidates = fused[:120]
 
@@ -427,6 +330,8 @@ Job Description:
         Apply JOB LEVEL + LANGUAGE filters BEFORE retrieval (hard constraints).
         These are restrictive and should narrow the search pool.
         """
+        # Log before job level filter
+        self.log_filter_stage('pre_job_level', list(range(len(self.df))))
         filtered_indices = list(range(len(self.df)))
 
         # -----------------------
@@ -443,6 +348,7 @@ Job Description:
                     for level in job_levels
                 )
             ]
+            self.log_filter_stage('post_job_level', filtered_indices)
 
         # -----------------------
         # LANGUAGE FILTER
@@ -451,13 +357,35 @@ Job Description:
         languages = structured.get("languages")
 
         if languages:
+            # Build supported language set
+            SUPPORTED_LANGUAGES = {
+                'Arabic', 'Chinese Simplified', 'Chinese Traditional', 'Czech', 'Danish',
+                'Dutch', 'English', 'Estonian', 'Finnish', 'Flemish', 'French',
+                'German', 'Greek', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian',
+                'Japanese', 'Korean', 'Spanish', 'Latvian', 'Lithuanian', 'Malay',
+                'Norwegian', 'Polish', 'Portuguese', 'Romanian', 'Russian', 'Serbian',
+                'Slovak', 'Swedish', 'Thai', 'Turkish', 'Vietnamese'
+            }
+            
+            def extract_languages_from_assessment(lang_str):
+                """Extract all supported languages found in assessment language string"""
+                found_langs = set()
+                lang_str_lower = str(lang_str).lower()
+                
+                for supported_lang in SUPPORTED_LANGUAGES:
+                    if supported_lang.lower() in lang_str_lower:
+                        found_langs.add(supported_lang)
+                
+                return found_langs
+            
             filtered_indices = [
                 i for i in filtered_indices
                 if any(
-                    lang.lower() in str(self.df.iloc[i]["languages"]).lower()
-                    for lang in languages
+                    req_lang in extract_languages_from_assessment(str(self.df.iloc[i]["languages"]))
+                    for req_lang in languages
                 )
             ]
+            self.log_filter_stage('post_language', filtered_indices)
 
         return filtered_indices
 
@@ -466,6 +394,7 @@ Job Description:
         Apply DURATION filter AFTER retrieval (flexible constraint).
         Allows best matches to pass through, just filtered by duration.
         """
+        self.log_filter_stage('pre_duration', candidates)
         min_d = structured.get("min_duration")
         max_d = structured.get("max_duration")
 
@@ -480,32 +409,12 @@ Job Description:
             
             filtered_candidates.append(idx)
 
+        self.log_filter_stage('post_duration', filtered_candidates)
         return filtered_candidates
 
-    def apply_filters_test_type(self, candidates, structured):
-        """
-        Apply TEST TYPE filter to ensure assessments match required test types.
-        This is a post-retrieval constraint that eliminates irrelevant assessment types.
-        """
-        required_types = structured.get("test_types")
-        
-        if not required_types:
-            return candidates
-        
-        # Convert required types to lowercase for case-insensitive comparison
-        required_types_lower = {t.lower() for t in required_types}
-        
-        filtered_candidates = []
-        for idx in candidates:
-            assessment_types_str = str(self.df.iloc[idx]["test_type"])
-            # Split by comma and strip whitespace
-            assessment_types = {t.strip().lower() for t in assessment_types_str.split(",")}
-            
-            # Keep assessment if it has at least one matching test type
-            if assessment_types & required_types_lower:  # intersection check
-                filtered_candidates.append(idx)
-        
-        return filtered_candidates
+
+     
+       
 
     def apply_filters(self, structured):
         """
