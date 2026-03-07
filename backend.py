@@ -78,9 +78,6 @@ def recommend(req: RecommendationRequest):
     # Retrieve with pre-filtered pool (job level + language constrained)
     candidates, structured = retrieval.retrieve(query, filtered_ids)
 
-    # Apply test type filter (post-retrieval constraint)
-    candidates = retrieval.apply_filters_test_type(candidates, structured)
-
     # Apply duration filter AFTER retrieval (flexible constraint)
     candidates = retrieval.apply_filters_duration(candidates, structured)
 
